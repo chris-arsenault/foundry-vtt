@@ -126,12 +126,13 @@ steady-state cost is storage only (~$4–8/month all-in).
 7. **First boot**: `/foundry start` in Discord, wait ~2 minutes, open
    https://foundry.ahara.io, enter the license key, and create the world.
    Configure S3 assets under Setup → filepicker (bucket
-   `foundry-vtt-assets-559098897826`). Set the administrator password in the
-   setup UI to the Terraform-generated one:
+   `foundry-vtt-assets-559098897826`). Choose an administrator password, set
+   it in the setup UI, and store the same value in SSM (Foundry keeps only a
+   hash, so the parameter is the retrievable copy):
 
    ```bash
-   aws ssm get-parameter --name /ahara/foundry-vtt/admin-password \
-     --with-decryption --query Parameter.Value --output text
+   aws ssm put-parameter --name /ahara/foundry-vtt/admin-password \
+     --type SecureString --value <admin password> --overwrite
    ```
 
 ## Operations
