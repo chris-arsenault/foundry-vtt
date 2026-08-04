@@ -9,6 +9,13 @@ set -euxo pipefail
 
 dnf -y install nodejs24 unzip jq amazon-efs-utils
 
+# Stable hostname across instance replacements: Foundry's license signature
+# is bound to machine identity, and the default ip-10-42-x-y hostname changes
+# with every replacement, forcing license re-entry. preserve_hostname stops
+# cloud-init from resetting it on later boots.
+hostnamectl set-hostname foundry-vtt
+echo "preserve_hostname: true" > /etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg
+
 # ── Hard cap: never run longer than ${max_uptime_minutes} minutes ──────────
 cat > /etc/systemd/system/foundry-max-uptime.service <<EOF
 [Unit]
