@@ -8,11 +8,22 @@ resource "aws_s3_bucket" "assets" {
   bucket = local.assets_bucket
 }
 
+# Foundry attaches a public-read ACL to every upload, so the bucket must
+# accept ACLs (the modern BucketOwnerEnforced default rejects them with
+# "bucket does not support ACLs") and the access block must not block them.
+resource "aws_s3_bucket_ownership_controls" "assets" {
+  bucket = aws_s3_bucket.assets.id
+
+  rule {
+    object_ownership = "BucketOwnerPreferred"
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "assets" {
   bucket = aws_s3_bucket.assets.id
 
-  block_public_acls       = true
-  ignore_public_acls      = true
+  block_public_acls       = false
+  ignore_public_acls      = false
   block_public_policy     = false
   restrict_public_buckets = false
 }
