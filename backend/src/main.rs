@@ -306,8 +306,14 @@ mod tests {
     fn rejects_foreign_missing_and_pending_guilds() {
         let home = json!({ "type": 2, "guild_id": "123456789012345678" });
         assert!(authorized_guild(&home, "123456789012345678"));
-        assert!(!authorized_guild(&json!({ "type": 2, "guild_id": "999" }), "123456789012345678"));
-        assert!(!authorized_guild(&json!({ "type": 2 }), "123456789012345678"));
+        assert!(!authorized_guild(
+            &json!({ "type": 2, "guild_id": "999" }),
+            "123456789012345678"
+        ));
+        assert!(!authorized_guild(
+            &json!({ "type": 2 }),
+            "123456789012345678"
+        ));
         assert!(!authorized_guild(&home, "PENDING"));
     }
 }
