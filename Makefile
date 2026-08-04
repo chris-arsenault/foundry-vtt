@@ -10,7 +10,7 @@ fmt:
 	cd backend && cargo fmt -- --check
 
 test:
-	cd backend && CARGO_TARGET_DIR=target-cov cargo test --release
+	cd backend && CARGO_TARGET_DIR=target-cov cargo test --release --lib
 
 terraform-fmt-check:
 	terraform fmt -check -recursive infrastructure/terraform/
