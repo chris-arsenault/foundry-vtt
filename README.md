@@ -32,20 +32,36 @@ steady-state cost is storage only (~$4–8/month all-in).
    aws s3 cp FoundryVTT-*.zip s3://foundry-vtt-releases-559098897826/foundryvtt.zip
    ```
 
-2. **Create the Discord application** (discord.com/developers): note the
-   *Public Key* and *Application ID*, then store the key:
+2. **Deploy**: `scripts/deploy.sh` (or push to main). Note the
+   `discord_interactions_url` output — needed in step 4.
+
+3. **Create the Discord application** at
+   https://discord.com/developers/applications → *New Application*. This is a
+   one-time manual step; Discord has no API for creating applications.
+
+   - From **General Information**, copy the *Application ID* and *Public Key*.
+   - On the **Bot** tab: create the bot user, copy its *token* (used exactly
+     once, in step 5 — it is never stored in this infrastructure), and turn
+     **Public Bot off**.
+   - Intents and permissions: **none**. This is a pure interactions-endpoint
+     app — it never connects to the gateway, so all three privileged intents
+     stay off and the permissions integer is 0.
+
+   Store the public key (must happen **before** step 4):
 
    ```bash
    aws ssm put-parameter --name /ahara/foundry-vtt/discord-public-key \
      --type String --value <public key hex> --overwrite
    ```
 
-3. **Deploy**: `scripts/deploy.sh` (or push to main). Note the
-   `discord_interactions_url` output.
+4. **Set the Interactions Endpoint URL**: on the app's **General Information**
+   page (field just below the Public Key), paste the
+   `discord_interactions_url` output and save. Discord immediately sends a
+   signed verification PING; if it says the URL "could not be verified," the
+   SSM parameter from step 3 is missing or wrong.
 
-4. **Point Discord at the Lambda**: set the Interactions Endpoint URL in the
-   Discord app to that output. Then register the slash command (run via
-   `with-cred --` in this environment, or set `DISCORD_BOT_TOKEN` yourself):
+5. **Register the slash command** (run via `with-cred --` in this
+   environment, or set `DISCORD_BOT_TOKEN` yourself):
 
    ```bash
    curl -X POST \
@@ -63,7 +79,28 @@ steady-state cost is storage only (~$4–8/month all-in).
      }'
    ```
 
-5. **First boot**: `/foundry start` in Discord, wait ~2 minutes, open
+   Verify it landed (an empty `[]` means the token or app ID was wrong):
+
+   ```bash
+   curl -s -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
+     "https://discord.com/api/v10/applications/<APP_ID>/commands"
+   ```
+
+6. **Add the app to your server** — registration alone does NOT make the
+   command appear anywhere. Open this in a browser, pick the server,
+   authorize:
+
+   ```
+   https://discord.com/oauth2/authorize?client_id=<APP_ID>&scope=applications.commands
+   ```
+
+   Only the `applications.commands` scope is needed; the bot user never joins
+   the server. Refresh the Discord client (Ctrl+R) and `/foundry` should
+   autocomplete. By default every server member can use it, including `stop`;
+   restrict it per-role/channel under *Server Settings → Integrations →
+   Foundry* if that matters.
+
+7. **First boot**: `/foundry start` in Discord, wait ~2 minutes, open
    https://foundry.ahara.io, enter the license key, and create the world.
    Configure S3 assets under Setup → filepicker (bucket
    `foundry-vtt-assets-559098897826`).
