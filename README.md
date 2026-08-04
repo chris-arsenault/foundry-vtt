@@ -62,6 +62,16 @@ steady-state cost is storage only (~$4–8/month all-in).
      --type String --value <server id> --overwrite
    ```
 
+   Also store the app's OAuth2 client secret and the bot token (operational
+   credentials; nothing in the infrastructure reads them at runtime):
+
+   ```bash
+   aws ssm put-parameter --name /ahara/foundry-vtt/discord-client-secret \
+     --type SecureString --value <client secret> --overwrite
+   aws ssm put-parameter --name /ahara/foundry-vtt/discord-bot-token \
+     --type SecureString --value <bot token> --overwrite
+   ```
+
 4. **Set the Interactions Endpoint URL**: on the app's **General Information**
    page (field just below the Public Key), paste the
    `discord_interactions_url` output and save. Discord immediately sends a
@@ -116,7 +126,13 @@ steady-state cost is storage only (~$4–8/month all-in).
 7. **First boot**: `/foundry start` in Discord, wait ~2 minutes, open
    https://foundry.ahara.io, enter the license key, and create the world.
    Configure S3 assets under Setup → filepicker (bucket
-   `foundry-vtt-assets-559098897826`).
+   `foundry-vtt-assets-559098897826`). Set the administrator password in the
+   setup UI to the Terraform-generated one:
+
+   ```bash
+   aws ssm get-parameter --name /ahara/foundry-vtt/admin-password \
+     --with-decryption --query Parameter.Value --output text
+   ```
 
 ## Operations
 

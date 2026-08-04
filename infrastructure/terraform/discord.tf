@@ -16,6 +16,34 @@ resource "aws_ssm_parameter" "discord_public_key" {
   }
 }
 
+# Operational Discord credentials, set once by hand after creating the app.
+# The client secret is the app's OAuth2 secret (Discord never exposes the
+# ed25519 private key); the bot token is used for slash-command registration.
+# Neither is read by the Lambda.
+#   aws ssm put-parameter --name /ahara/foundry-vtt/discord-client-secret \
+#     --type SecureString --value <client secret> --overwrite
+#   aws ssm put-parameter --name /ahara/foundry-vtt/discord-bot-token \
+#     --type SecureString --value <bot token> --overwrite
+resource "aws_ssm_parameter" "discord_client_secret" {
+  name  = "${local.ssm_prefix}/discord-client-secret"
+  type  = "SecureString"
+  value = "PENDING"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
+resource "aws_ssm_parameter" "discord_bot_token" {
+  name  = "${local.ssm_prefix}/discord-bot-token"
+  type  = "SecureString"
+  value = "PENDING"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}
+
 # The only Discord server allowed to command the instance. A valid signature
 # proves the request came from Discord for this application, not that it came
 # from our server — anyone who installs the app elsewhere still produces
