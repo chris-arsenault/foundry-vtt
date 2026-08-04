@@ -17,7 +17,8 @@ Foundry itself is licensed vendor software staged as a zip in S3.
   ahara-infra `network/waf.tf`.
 - **Data**: EFS at `/data` (mount target pinned to the same AZ/subnet as the
   instance), daily AWS Backup. Instance root EBS is disposable.
-- **Assets**: `foundry-vtt-assets` S3 bucket is public-read — a deliberate
+- **Assets**: the `foundry-vtt-assets-<account id>` S3 bucket is public-read
+  (bucket names carry an account-id suffix; bare names are taken) — a deliberate
   exception to the platform CloudFront-OAC posture because Foundry's S3
   integration serves direct object URLs to players. Game media only.
 - **Wake**: `/foundry start|stop|status` Discord slash command → Lambda

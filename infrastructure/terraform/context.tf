@@ -2,6 +2,8 @@ module "ctx" {
   source = "git::https://github.com/chris-arsenault/ahara-tf-patterns.git//modules/platform-context"
 }
 
+data "aws_caller_identity" "current" {}
+
 # The shared ALB security group is not exported by platform-context; discover
 # it by tag so the server SG can scope ingress to ALB traffic only.
 data "aws_security_group" "alb" {

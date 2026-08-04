@@ -8,8 +8,10 @@ locals {
   # athena-s3-web-shell reserves 220-229; tsonu-music starts at 240.
   listener_rule_priority = 230
 
-  assets_bucket   = "${local.prefix}-assets"
-  releases_bucket = "${local.prefix}-releases"
+  # Account-id suffix: bare foundry-vtt-* names are likely taken in the
+  # global S3 namespace.
+  assets_bucket   = "${local.prefix}-assets-${data.aws_caller_identity.current.account_id}"
+  releases_bucket = "${local.prefix}-releases-${data.aws_caller_identity.current.account_id}"
   release_key     = "foundryvtt.zip"
 
   ssm_prefix = "/ahara/foundry-vtt"

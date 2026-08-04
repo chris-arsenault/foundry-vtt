@@ -15,7 +15,8 @@ steady-state cost is storage only (~$4–8/month all-in).
   daily AWS Backup. The instance root volume is disposable; replace the
   instance freely, data survives.
 - **Assets**: Foundry's native S3 media integration against the public-read
-  `foundry-vtt-assets` bucket (instance-profile credentials, no stored keys).
+  `foundry-vtt-assets-<account id>` bucket (instance-profile credentials, no
+  stored keys).
 - **Wake/sleep**: a Discord bot (`/foundry start|stop|status`) posts to a
   Lambda Function URL that starts/stops the instance. On the instance, a
   watchdog polls `/api/status` every minute and stops the machine after 60
@@ -28,7 +29,7 @@ steady-state cost is storage only (~$4–8/month all-in).
    hand). Get the *Linux/NodeJS* zip from foundryvtt.com, then:
 
    ```bash
-   aws s3 cp FoundryVTT-*.zip s3://foundry-vtt-releases/foundryvtt.zip
+   aws s3 cp FoundryVTT-*.zip s3://foundry-vtt-releases-559098897826/foundryvtt.zip
    ```
 
 2. **Create the Discord application** (discord.com/developers): note the
@@ -64,7 +65,8 @@ steady-state cost is storage only (~$4–8/month all-in).
 
 5. **First boot**: `/foundry start` in Discord, wait ~2 minutes, open
    https://foundry.ahara.io, enter the license key, and create the world.
-   Configure S3 assets under Setup → filepicker (bucket `foundry-vtt-assets`).
+   Configure S3 assets under Setup → filepicker (bucket
+   `foundry-vtt-assets-559098897826`).
 
 ## Operations
 
