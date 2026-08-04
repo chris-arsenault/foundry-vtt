@@ -22,27 +22,30 @@ struct Config {
     key: VerifyingKey,
     instance_id: String,
     hostname: String,
+    guild_id: String,
 }
 
 static CONFIG: OnceCell<Config> = OnceCell::const_new();
+
+async fn ssm_value(ssm: &aws_sdk_ssm::Client, env_name: &str) -> Result<String, Error> {
+    let param = env::var(env_name)?;
+    let response = ssm.get_parameter().name(&param).send().await?;
+    Ok(response
+        .parameter()
+        .and_then(|p| p.value())
+        .ok_or_else(|| format!("{param} has no value"))?
+        .trim()
+        .to_string())
+}
 
 async fn config() -> Result<&'static Config, Error> {
     CONFIG
         .get_or_try_init(|| async {
             let aws = aws_config::load_defaults(aws_config::BehaviorVersion::latest()).await;
-            let param = env::var("PUBLIC_KEY_PARAM")?;
-            let response = aws_sdk_ssm::Client::new(&aws)
-                .get_parameter()
-                .name(&param)
-                .send()
-                .await?;
-            let hex_key = response
-                .parameter()
-                .and_then(|p| p.value())
-                .ok_or("public key parameter has no value")?
-                .trim();
-            let key = parse_public_key(hex_key)
-                .ok_or_else(|| format!("{param} is not a 32-byte hex ed25519 key"))?;
+            let ssm = aws_sdk_ssm::Client::new(&aws);
+            let hex_key = ssm_value(&ssm, "PUBLIC_KEY_PARAM").await?;
+            let key = parse_public_key(&hex_key)
+                .ok_or("public key parameter is not a 32-byte hex ed25519 key")?;
             Ok::<_, Error>(Config {
                 ec2: aws_sdk_ec2::Client::new(&aws),
                 http: reqwest::Client::builder()
@@ -51,9 +54,16 @@ async fn config() -> Result<&'static Config, Error> {
                 key,
                 instance_id: env::var("INSTANCE_ID")?,
                 hostname: env::var("FOUNDRY_HOSTNAME")?,
+                // Exact-compare only; the PENDING placeholder never matches a
+                // real guild id, so commands fail closed until it is set.
+                guild_id: ssm_value(&ssm, "GUILD_ID_PARAM").await?,
             })
         })
         .await
+}
+
+fn authorized_guild(interaction: &Value, guild_id: &str) -> bool {
+    interaction["guild_id"].as_str() == Some(guild_id)
 }
 
 fn parse_public_key(hex_key: &str) -> Option<VerifyingKey> {
@@ -195,6 +205,17 @@ async fn dispatch(cfg: &Config, sub: &str) -> Result<Response<Body>, Error> {
     }
 }
 
+async fn handle_command(cfg: &Config, interaction: &Value) -> Result<Response<Body>, Error> {
+    if !authorized_guild(interaction, &cfg.guild_id) {
+        tracing::warn!(
+            guild_id = interaction["guild_id"].as_str().unwrap_or("<none>"),
+            "command from unauthorized guild"
+        );
+        return reply("This command only works in its home server.".to_string());
+    }
+    dispatch(cfg, subcommand(interaction)).await
+}
+
 fn header<'a>(req: &'a Request, name: &str) -> Option<&'a str> {
     req.headers().get(name).and_then(|v| v.to_str().ok())
 }
@@ -220,7 +241,7 @@ async fn interaction(req: Request) -> Result<Response<Body>, Error> {
     let interaction: Value = serde_json::from_slice(req.body())?;
     match interaction["type"].as_u64() {
         Some(1) => json_response(200, &json!({ "type": 1 })),
-        Some(2) => dispatch(cfg, subcommand(&interaction)).await,
+        Some(2) => handle_command(cfg, &interaction).await,
         _ => json_response(400, &json!({ "error": "unsupported interaction type" })),
     }
 }
@@ -279,5 +300,14 @@ mod tests {
         let i = json!({ "type": 2, "data": { "options": [{ "name": "start" }] } });
         assert_eq!(subcommand(&i), "start");
         assert_eq!(subcommand(&json!({ "type": 2 })), "status");
+    }
+
+    #[test]
+    fn rejects_foreign_missing_and_pending_guilds() {
+        let home = json!({ "type": 2, "guild_id": "123456789012345678" });
+        assert!(authorized_guild(&home, "123456789012345678"));
+        assert!(!authorized_guild(&json!({ "type": 2, "guild_id": "999" }), "123456789012345678"));
+        assert!(!authorized_guild(&json!({ "type": 2 }), "123456789012345678"));
+        assert!(!authorized_guild(&home, "PENDING"));
     }
 }

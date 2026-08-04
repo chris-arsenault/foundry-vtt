@@ -27,6 +27,10 @@ Lambda in `backend/`.
   ALB at api.foundry-vtt.ahara.io (alb-api module, listener priority 231,
   unauthenticated route — Discord signs every request, verified via
   ed25519 against `/ahara/foundry-vtt/discord-public-key` in SSM).
+  Authorization is a guild allowlist: the signature only proves the request
+  came from Discord for this app, so the handler rejects any interaction
+  whose guild_id differs from `/ahara/foundry-vtt/discord-guild-id`
+  (fails closed while PENDING), and the command is registered guild-scoped.
 - **Sleep**: on-instance systemd timer stops the machine after 60 idle
   minutes (zero `users` from `http://localhost:30000/api/status`); a second
   unit hard-stops 720 minutes after boot.

@@ -47,11 +47,19 @@ steady-state cost is storage only (~$4–8/month all-in).
      app — it never connects to the gateway, so all three privileged intents
      stay off and the permissions integer is 0.
 
-   Store the public key (must happen **before** step 4):
+   Store the public key and your server (guild) ID — both must happen
+   **before** step 4. The guild ID is the snowflake in your server's URL
+   (Server Settings → Widget, or right-click the server icon with developer
+   mode on → Copy Server ID). The Lambda rejects commands from any other
+   server: a valid Discord signature proves the request came from Discord for
+   this app, not that it came from *your* server, so the guild allowlist is
+   the actual authorization. Commands fail closed while this is PENDING.
 
    ```bash
    aws ssm put-parameter --name /ahara/foundry-vtt/discord-public-key \
      --type String --value <public key hex> --overwrite
+   aws ssm put-parameter --name /ahara/foundry-vtt/discord-guild-id \
+     --type String --value <server id> --overwrite
    ```
 
 4. **Set the Interactions Endpoint URL**: on the app's **General Information**
@@ -60,14 +68,15 @@ steady-state cost is storage only (~$4–8/month all-in).
    signed verification PING; if it says the URL "could not be verified," the
    SSM parameter from step 3 is missing or wrong.
 
-5. **Register the slash command** (run via `with-cred --` in this
-   environment, or set `DISCORD_BOT_TOKEN` yourself):
+5. **Register the slash command** — guild-scoped, so `/foundry` exists only
+   in your server (run via `with-cred --` in this environment, or set
+   `DISCORD_BOT_TOKEN` yourself):
 
    ```bash
    curl -X POST \
      -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
      -H "Content-Type: application/json" \
-     "https://discord.com/api/v10/applications/<APP_ID>/commands" \
+     "https://discord.com/api/v10/applications/<APP_ID>/guilds/<GUILD_ID>/commands" \
      -d '{
        "name": "foundry",
        "description": "Manage the Foundry VTT server",
@@ -83,8 +92,12 @@ steady-state cost is storage only (~$4–8/month all-in).
 
    ```bash
    curl -s -H "Authorization: Bot $DISCORD_BOT_TOKEN" \
-     "https://discord.com/api/v10/applications/<APP_ID>/commands"
+     "https://discord.com/api/v10/applications/<APP_ID>/guilds/<GUILD_ID>/commands"
    ```
+
+   If you previously registered the command globally (no `/guilds/` segment),
+   delete it: `GET` the global commands list the same way, then
+   `curl -X DELETE .../applications/<APP_ID>/commands/<COMMAND_ID>`.
 
 6. **Add the app to your server** — registration alone does NOT make the
    command appear anywhere. Open this in a browser, pick the server,
