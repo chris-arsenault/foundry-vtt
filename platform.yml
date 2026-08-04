@@ -1,0 +1,4 @@
+project: foundry-vtt
+prefix: foundry-vtt
+stack:
+  - terraform
