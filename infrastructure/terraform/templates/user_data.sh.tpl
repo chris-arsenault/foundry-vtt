@@ -80,6 +80,13 @@ mount -a
 useradd --system --home-dir /data/foundry --shell /sbin/nologin foundry || true
 mkdir -p /data/foundry/Config
 
+# AWS config for Foundry's S3 media integration: region only, no credential
+# keys, so the SDK falls through to the instance role. ("awsConfig": true
+# would resolve from environment variables only and never see the role.)
+cat > /data/foundry/Config/aws.json <<EOF
+{ "region": "${region}" }
+EOF
+
 # Seed options.json once; afterwards Foundry's setup UI owns it (it lives on EFS).
 if [ ! -f /data/foundry/Config/options.json ]; then
   cat > /data/foundry/Config/options.json <<EOF
@@ -89,11 +96,18 @@ if [ ! -f /data/foundry/Config/options.json ]; then
   "hostname": "${hostname}",
   "proxySSL": true,
   "proxyPort": 443,
-  "awsConfig": true,
+  "awsConfig": "/data/foundry/Config/aws.json",
   "minifyStaticFiles": true
 }
 EOF
 fi
+
+# awsConfig is infrastructure-owned: enforce it on every provision without
+# touching the UI-owned settings around it.
+OPTIONS_TMP=$(mktemp)
+jq '.awsConfig = "/data/foundry/Config/aws.json"' /data/foundry/Config/options.json > "$${OPTIONS_TMP}"
+mv "$${OPTIONS_TMP}" /data/foundry/Config/options.json
+
 chown -R foundry:foundry /data/foundry
 
 # ── Foundry install + run helpers ───────────────────────────
