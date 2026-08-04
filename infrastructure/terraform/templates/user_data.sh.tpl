@@ -7,7 +7,7 @@
 # instance running indefinitely.
 set -euxo pipefail
 
-dnf -y install nodejs22 unzip jq amazon-efs-utils
+dnf -y install nodejs24 unzip jq amazon-efs-utils
 
 # ── Hard cap: never run longer than ${max_uptime_minutes} minutes ──────────
 cat > /etc/systemd/system/foundry-max-uptime.service <<EOF
@@ -116,12 +116,13 @@ chmod +x /usr/local/bin/foundry-install
 cat > /usr/local/bin/foundry-run <<'RUN'
 #!/bin/bash
 set -euo pipefail
-NODE_BIN=$(command -v node-22 || command -v node22 || command -v node)
+# /usr/bin/node-24 is the namespaced AL2023 binary; it always resolves to
+# Node 24 regardless of the `alternatives` default.
 MAIN_JS=$(find /opt/foundryvtt -maxdepth 5 -type f \( -name main.mjs -o -name main.js \) -path '*resources/app*' | head -1)
 if [ -z "$${MAIN_JS}" ]; then
   MAIN_JS=$(find /opt/foundryvtt -maxdepth 2 -type f \( -name main.mjs -o -name main.js \) | head -1)
 fi
-exec "$${NODE_BIN}" "$${MAIN_JS}" --dataPath=/data/foundry
+exec /usr/bin/node-24 "$${MAIN_JS}" --dataPath=/data/foundry
 RUN
 chmod +x /usr/local/bin/foundry-run
 
