@@ -66,30 +66,33 @@ resource "aws_iam_role_policy" "server" {
   policy = data.aws_iam_policy_document.server.json
 }
 
+# Inline rules, not aws_vpc_security_group_*_rule resources: the deployer
+# policy tag-scopes AuthorizeSecurityGroup*, which fails against the untagged
+# security-group-rule ARNs the standalone resources create.
 resource "aws_security_group" "server" {
   name        = "${local.prefix}-server-sg"
   description = "Foundry VTT server: game traffic from the shared ALB only"
   vpc_id      = module.ctx.vpc.vpc_id
 
+  ingress {
+    description     = "Foundry HTTP/WebSocket from the shared ALB"
+    from_port       = local.foundry_port
+    to_port         = local.foundry_port
+    protocol        = "tcp"
+    security_groups = [data.aws_security_group.alb.id]
+  }
+
+  egress {
+    description = "Outbound for module downloads, S3, SSM (via fck-nat)"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags = {
     Name = "${local.prefix}-server-sg"
   }
-}
-
-resource "aws_vpc_security_group_ingress_rule" "server_from_alb" {
-  security_group_id            = aws_security_group.server.id
-  description                  = "Foundry HTTP/WebSocket from the shared ALB"
-  ip_protocol                  = "tcp"
-  from_port                    = local.foundry_port
-  to_port                      = local.foundry_port
-  referenced_security_group_id = data.aws_security_group.alb.id
-}
-
-resource "aws_vpc_security_group_egress_rule" "server_all" {
-  security_group_id = aws_security_group.server.id
-  description       = "Outbound for module downloads, S3, SSM (via fck-nat)"
-  ip_protocol       = "-1"
-  cidr_ipv4         = "0.0.0.0/0"
 }
 
 resource "aws_instance" "server" {
@@ -100,10 +103,10 @@ resource "aws_instance" "server" {
   iam_instance_profile                 = aws_iam_instance_profile.server.name
   instance_initiated_shutdown_behavior = "stop"
 
-  # User-data edits apply in place (stop/start); use `terraform apply
-  # -replace=aws_instance.server` to re-run first-boot provisioning. Data is
-  # safe on EFS either way.
-  user_data_replace_on_change = false
+  # User-data edits replace the instance so provisioning actually re-runs
+  # (cloud-init only executes user data once per instance). Replacement is
+  # cheap by design: the root volume is disposable and data lives on EFS.
+  user_data_replace_on_change = true
 
   metadata_options {
     http_endpoint               = "enabled"

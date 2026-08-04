@@ -1,65 +1,23 @@
 #!/bin/bash
 # First-boot provisioning for the Foundry VTT server (AL2023 arm64).
 # Terraform template: double-dollar braces are shell, single are Terraform.
+#
+# Ordering matters: the auto-stop units are installed before anything that can
+# fail (EFS mount, S3 fetch), so a broken provision can never leave the
+# instance running indefinitely.
 set -euxo pipefail
 
 dnf -y install nodejs22 unzip jq amazon-efs-utils
 
-NODE_BIN=$(command -v node-22 || command -v node22 || command -v node)
-
-# ── Foundry data on EFS ─────────────────────────────────────
-mkdir -p /data
-if ! grep -q '^${efs_id}:/ /data ' /etc/fstab; then
-  echo '${efs_id}:/ /data efs _netdev,tls 0 0' >> /etc/fstab
-fi
-mount -a
-
-useradd --system --home-dir /data/foundry --shell /sbin/nologin foundry || true
-mkdir -p /data/foundry/Config
-
-# ── Foundry application (disposable; data stays on EFS) ─────
-if [ ! -d /opt/foundryvtt ]; then
-  aws s3 cp 's3://${releases_bucket}/${release_key}' /tmp/foundryvtt.zip
-  mkdir -p /opt/foundryvtt
-  unzip -oq /tmp/foundryvtt.zip -d /opt/foundryvtt
-  rm -f /tmp/foundryvtt.zip
-fi
-
-MAIN_JS=$(find /opt/foundryvtt -maxdepth 5 -type f \( -name main.mjs -o -name main.js \) -path '*resources/app*' | head -1)
-if [ -z "$${MAIN_JS}" ]; then
-  MAIN_JS=$(find /opt/foundryvtt -maxdepth 2 -type f \( -name main.mjs -o -name main.js \) | head -1)
-fi
-
-# Seed options.json once; afterwards Foundry's setup UI owns it (it lives on EFS).
-if [ ! -f /data/foundry/Config/options.json ]; then
-  cat > /data/foundry/Config/options.json <<EOF
-{
-  "port": ${foundry_port},
-  "upnp": false,
-  "hostname": "${hostname}",
-  "proxySSL": true,
-  "proxyPort": 443,
-  "awsConfig": true,
-  "minifyStaticFiles": true
-}
-EOF
-fi
-chown -R foundry:foundry /data/foundry
-
-# ── Foundry service ─────────────────────────────────────────
-cat > /etc/systemd/system/foundryvtt.service <<EOF
+# ── Hard cap: never run longer than ${max_uptime_minutes} minutes ──────────
+cat > /etc/systemd/system/foundry-max-uptime.service <<EOF
 [Unit]
-Description=Foundry Virtual Tabletop
-After=network-online.target remote-fs.target
-Wants=network-online.target
-RequiresMountsFor=/data
+Description=Hard stop ${max_uptime_minutes} minutes after boot
+After=network.target
 
 [Service]
-User=foundry
-Environment=AWS_REGION=${region}
-ExecStart=$${NODE_BIN} $${MAIN_JS} --dataPath=/data/foundry
-Restart=always
-RestartSec=5
+Type=oneshot
+ExecStart=/usr/sbin/shutdown -h +${max_uptime_minutes}
 
 [Install]
 WantedBy=multi-user.target
@@ -109,19 +67,83 @@ OnUnitActiveSec=1min
 WantedBy=timers.target
 EOF
 
-# ── Hard cap: never run longer than ${max_uptime_minutes} minutes ──────────
-cat > /etc/systemd/system/foundry-max-uptime.service <<EOF
+systemctl daemon-reload
+systemctl enable --now foundry-max-uptime.service foundry-idle.timer
+
+# ── Foundry data on EFS ─────────────────────────────────────
+mkdir -p /data
+if ! grep -q '^${efs_id}:/ /data ' /etc/fstab; then
+  echo '${efs_id}:/ /data efs _netdev,tls 0 0' >> /etc/fstab
+fi
+mount -a
+
+useradd --system --home-dir /data/foundry --shell /sbin/nologin foundry || true
+mkdir -p /data/foundry/Config
+
+# Seed options.json once; afterwards Foundry's setup UI owns it (it lives on EFS).
+if [ ! -f /data/foundry/Config/options.json ]; then
+  cat > /data/foundry/Config/options.json <<EOF
+{
+  "port": ${foundry_port},
+  "upnp": false,
+  "hostname": "${hostname}",
+  "proxySSL": true,
+  "proxyPort": 443,
+  "awsConfig": true,
+  "minifyStaticFiles": true
+}
+EOF
+fi
+chown -R foundry:foundry /data/foundry
+
+# ── Foundry install + run helpers ───────────────────────────
+# Installation happens at service start (idempotent), not at provision time:
+# if the release zip is not staged yet, the service retries every minute
+# instead of leaving a half-provisioned instance behind.
+cat > /usr/local/bin/foundry-install <<'INSTALL'
+#!/bin/bash
+set -euo pipefail
+if [ -d /opt/foundryvtt ]; then
+  exit 0
+fi
+aws s3 cp "s3://$${1:?releases bucket}/$${2:?release key}" /tmp/foundryvtt.zip
+mkdir -p /opt/foundryvtt
+unzip -oq /tmp/foundryvtt.zip -d /opt/foundryvtt
+rm -f /tmp/foundryvtt.zip
+INSTALL
+chmod +x /usr/local/bin/foundry-install
+
+cat > /usr/local/bin/foundry-run <<'RUN'
+#!/bin/bash
+set -euo pipefail
+NODE_BIN=$(command -v node-22 || command -v node22 || command -v node)
+MAIN_JS=$(find /opt/foundryvtt -maxdepth 5 -type f \( -name main.mjs -o -name main.js \) -path '*resources/app*' | head -1)
+if [ -z "$${MAIN_JS}" ]; then
+  MAIN_JS=$(find /opt/foundryvtt -maxdepth 2 -type f \( -name main.mjs -o -name main.js \) | head -1)
+fi
+exec "$${NODE_BIN}" "$${MAIN_JS}" --dataPath=/data/foundry
+RUN
+chmod +x /usr/local/bin/foundry-run
+
+# ── Foundry service ─────────────────────────────────────────
+cat > /etc/systemd/system/foundryvtt.service <<EOF
 [Unit]
-Description=Hard stop ${max_uptime_minutes} minutes after boot
-After=network.target
+Description=Foundry Virtual Tabletop
+After=network-online.target remote-fs.target
+Wants=network-online.target
+RequiresMountsFor=/data
 
 [Service]
-Type=oneshot
-ExecStart=/usr/sbin/shutdown -h +${max_uptime_minutes}
+User=foundry
+Environment=AWS_REGION=${region}
+ExecStartPre=+/usr/local/bin/foundry-install ${releases_bucket} ${release_key}
+ExecStart=/usr/local/bin/foundry-run
+Restart=always
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable --now foundryvtt.service foundry-idle.timer foundry-max-uptime.service
+systemctl enable --now foundryvtt.service

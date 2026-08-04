@@ -1,23 +1,23 @@
 # Foundry's data directory (worlds, modules, config) lives on EFS so the
 # instance itself is disposable: upgrades replace the instance, data persists.
 
+# Inline rules for the same IAM-scoping reason documented in ec2.tf.
 resource "aws_security_group" "efs" {
   name        = "${local.prefix}-efs-sg"
   description = "NFS access to the Foundry data filesystem"
   vpc_id      = module.ctx.vpc.vpc_id
 
+  ingress {
+    description     = "NFS from the Foundry server"
+    from_port       = 2049
+    to_port         = 2049
+    protocol        = "tcp"
+    security_groups = [aws_security_group.server.id]
+  }
+
   tags = {
     Name = "${local.prefix}-efs-sg"
   }
-}
-
-resource "aws_vpc_security_group_ingress_rule" "efs_from_server" {
-  security_group_id            = aws_security_group.efs.id
-  description                  = "NFS from the Foundry server"
-  ip_protocol                  = "tcp"
-  from_port                    = 2049
-  to_port                      = 2049
-  referenced_security_group_id = aws_security_group.server.id
 }
 
 resource "aws_efs_file_system" "data" {
