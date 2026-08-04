@@ -27,3 +27,6 @@ infrastructure/terraform/lambda/**/*.zip
 
 # OS
 .DS_Store
+
+# Terminal paste artifacts
+.sulion-paste/

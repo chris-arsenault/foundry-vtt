@@ -1,67 +1,60 @@
-# foundry-vtt
+# Agent Guide
 
-Infrastructure and wake-bot for a Foundry Virtual Tabletop server at
-foundry.ahara.io on the ahara platform. Foundry itself is licensed vendor
-software staged as a zip in S3; the only code built here is the Rust wake-bot
-Lambda in `backend/`.
+Infrastructure and Discord wake-bot for a Foundry VTT game server at
+foundry.ahara.io on the ahara platform. Foundry is licensed vendor software
+staged as a zip in S3; the only code built here is the Rust wake-bot Lambda.
 
-## Architecture
+## Read first
 
-- **Server**: plain `aws_instance` (t4g.medium, AL2023 arm64) in the shared
-  VPC private subnet. Deliberately NOT the platform's ASG-of-1 pattern: the
-  instance stops between sessions and an ASG would replace a stopped instance.
-  `instance_initiated_shutdown_behavior = "stop"`; all provisioning is in
-  `infrastructure/terraform/templates/user_data.sh.tpl`.
-- **Edge**: shared ALB, SNI cert, listener rule priority 230, host
-  `foundry.ahara.io`, forward with no auth action (Foundry has its own auth).
-  WAF is fully bypassed for this host — rule `FoundryVttBypass` in
-  ahara-infra `network/waf.tf`.
-- **Data**: EFS at `/data` (mount target pinned to the same AZ/subnet as the
-  instance), daily AWS Backup. Instance root EBS is disposable.
-- **Assets**: the `foundry-vtt-assets-<account id>` S3 bucket is public-read
-  (bucket names carry an account-id suffix; bare names are taken) — a deliberate
-  exception to the platform CloudFront-OAC posture because Foundry's S3
-  integration serves direct object URLs to players. Game media only.
-- **Wake**: `/foundry start|stop|status` Discord slash command → Rust
-  lambda_http Lambda (`backend/`, manual routing, no Axum) behind the shared
-  ALB at api.foundry-vtt.ahara.io (alb-api module, listener priority 231,
-  unauthenticated route — Discord signs every request, verified via
-  ed25519 against `/ahara/foundry-vtt/discord-public-key` in SSM).
-  Authorization is a guild allowlist: the signature only proves the request
-  came from Discord for this app, so the handler rejects any interaction
-  whose guild_id differs from `/ahara/foundry-vtt/discord-guild-id`
-  (fails closed while PENDING), and the command is registered guild-scoped.
-- **Sleep**: on-instance systemd timer stops the machine after 60 idle
-  minutes (zero `users` from `http://localhost:30000/api/status`); a second
-  unit hard-stops 720 minutes after boot.
+| Topic | Link |
+| ---- | ---- |
+| Repo overview | [README.md](README.md) |
+| Architecture | [docs/architecture.md](docs/architecture.md) |
+| Operations | [docs/operations.md](docs/operations.md) |
+| Architecture decisions | [docs/adr/README.md](docs/adr/README.md) |
+| Backlog | [docs/backlog.md](docs/backlog.md) |
+| Platform integration | `~/src/ahara/INTEGRATION.md` |
 
-## Build & Deploy
+## Critical rules
 
-```bash
-make ci            # clippy + fmt + tests + terraform fmt check
-scripts/deploy.sh  # cargo lambda build + terraform init + apply (CI does the same on main)
-```
+- Run `make ci` before every commit; do not commit if it fails.
+- Deploys go through the shared CI workflow on main. `scripts/deploy.sh` is
+  the local-only equivalent; CI must not call it.
+- One canonical way per mechanism: no fallback chains (`a || b` installs,
+  multi-candidate binary resolution). Hardcode the canonical value and fail
+  loudly.
+- Secrets are user-set SSM parameters (`PENDING` placeholder +
+  `ignore_changes`). Never generate secrets with Terraform; plaintext lands
+  in state.
+- Reuse ahara platform patterns (shared VPC/ALB, alb-api module, SSM
+  discovery) before inventing anything project-local. Deviations require an
+  ADR — see [docs/adr/](docs/adr/README.md) for the existing ones.
+- Changing `templates/user_data.sh.tpl` replaces the EC2 instance on the
+  next apply. Game data on EFS survives; anyone connected is dropped.
+- ALB listener priorities 230–231 are claimed in the shared table in
+  `ahara/INTEGRATION.md`; claim a new one there before adding a rule.
+- Rust follows platform norms: `lambda_http` with manual routing (no Axum
+  for platform APIs), clippy `-D warnings -W clippy::cognitive_complexity`.
 
-## Key decisions
+## Code map
 
-- Stop-when-idle over always-on: sessions total ~16 h/month; compute is
-  pennies while EFS/EBS/S3 dominate the ~$4–8/mo cost.
-- EFS over EBS data volume: instance replacement (Foundry/OS upgrades) never
-  touches game data; `terraform apply -replace=aws_instance.server` is the
-  upgrade path.
-- Spot rejected: a 2-minute interruption warning mid-session is unacceptable.
-- TrueNAS rejected: serves people other than the platform owner
-  (ahara TRUENAS-DEPLOY.md placement rule).
+| Path | Purpose |
+| ---- | ---- |
+| `backend/` | Rust wake-bot Lambda (lib + thin bin) |
+| `infrastructure/terraform/` | All Terraform (flat kebab-case files) |
+| `infrastructure/terraform/templates/user_data.sh.tpl` | Instance provisioning |
+| `infrastructure/terraform/discord.tf` | Wake bot: alb-api module, SSM params |
+| `infrastructure/terraform/ec2.tf` | Game server instance, IAM, SG |
+| `infrastructure/terraform/efs.tf` | Foundry data filesystem |
+| `infrastructure/terraform/s3.tf` | Assets (public-read) + releases buckets |
+| `.github/workflows/ci.yml` | Thin caller of the shared ahara workflow |
+| `platform.yml` | Platform manifest (stack, rust_artifacts) |
 
-## Platform integration
+## Commands
 
-See `~/src/ahara/INTEGRATION.md`. State key `projects/foundry-vtt.tfstate`;
-deployer role registered in
-`ahara-infra/infrastructure/terraform/control/project-foundry-vtt.tf`
-(includes the `efs` and `s3-bucket-policy` policy modules added for this
-project).
-
-## Pre-commit CI check
-
-**Run `make ci` before committing any change.** This runs the same lint,
-format, typecheck, and test steps as GitHub Actions. Do not commit if it fails.
+| Command | Purpose |
+| ---- | ---- |
+| `make ci` | Full pre-commit check |
+| `make build` | `cargo lambda build --release` |
+| `scripts/deploy.sh` | Local build + terraform apply |
+| `terraform -chdir=infrastructure/terraform output` | Deployed endpoints/ids |
