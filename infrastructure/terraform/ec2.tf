@@ -41,9 +41,11 @@ data "aws_iam_policy_document" "server" {
     resources = ["*"]
   }
 
+  # PutObjectAcl: Foundry attaches a public-read ACL to every upload, and a
+  # PutObject that carries an ACL requires both permissions.
   statement {
     sid     = "AssetsReadWrite"
-    actions = ["s3:ListBucket", "s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    actions = ["s3:ListBucket", "s3:GetObject", "s3:PutObject", "s3:PutObjectAcl", "s3:DeleteObject"]
     resources = [
       aws_s3_bucket.assets.arn,
       "${aws_s3_bucket.assets.arn}/*",
