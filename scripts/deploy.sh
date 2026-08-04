@@ -7,6 +7,10 @@ TF_DIR="${ROOT_DIR}/infrastructure/terraform"
 STATE_BUCKET="${STATE_BUCKET:-tfstate-559098897826}"
 STATE_REGION="${STATE_REGION:-us-east-1}"
 
+echo "==> Building Rust Lambda"
+(cd "${ROOT_DIR}/backend" && cargo lambda build --release)
+
+echo ""
 echo "==> Running Terraform"
 terraform -chdir="${TF_DIR}" init -reconfigure \
   -backend-config="bucket=${STATE_BUCKET}" \

@@ -1,8 +1,9 @@
 # foundry-vtt
 
-Terraform-only repo hosting a Foundry Virtual Tabletop server at
-foundry.ahara.io on the ahara platform. No application code is built here;
-Foundry itself is licensed vendor software staged as a zip in S3.
+Infrastructure and wake-bot for a Foundry Virtual Tabletop server at
+foundry.ahara.io on the ahara platform. Foundry itself is licensed vendor
+software staged as a zip in S3; the only code built here is the Rust wake-bot
+Lambda in `backend/`.
 
 ## Architecture
 
@@ -21,9 +22,11 @@ Foundry itself is licensed vendor software staged as a zip in S3.
   (bucket names carry an account-id suffix; bare names are taken) — a deliberate
   exception to the platform CloudFront-OAC posture because Foundry's S3
   integration serves direct object URLs to players. Game media only.
-- **Wake**: `/foundry start|stop|status` Discord slash command → Lambda
-  Function URL (`infrastructure/terraform/lambda/discord/index.mjs`, nodejs22,
-  ed25519 verify via `/ahara/foundry-vtt/discord-public-key` SSM param).
+- **Wake**: `/foundry start|stop|status` Discord slash command → Rust
+  lambda_http Lambda (`backend/`, manual routing, no Axum) behind the shared
+  ALB at api.foundry-vtt.ahara.io (alb-api module, listener priority 231,
+  unauthenticated route — Discord signs every request, verified via
+  ed25519 against `/ahara/foundry-vtt/discord-public-key` in SSM).
 - **Sleep**: on-instance systemd timer stops the machine after 60 idle
   minutes (zero `users` from `http://localhost:30000/api/status`); a second
   unit hard-stops 720 minutes after boot.
@@ -31,8 +34,8 @@ Foundry itself is licensed vendor software staged as a zip in S3.
 ## Build & Deploy
 
 ```bash
-make ci            # terraform fmt check + lambda syntax check
-scripts/deploy.sh  # terraform init + apply (CI does the same on main)
+make ci            # clippy + fmt + tests + terraform fmt check
+scripts/deploy.sh  # cargo lambda build + terraform init + apply (CI does the same on main)
 ```
 
 ## Key decisions

@@ -1,4 +1,8 @@
 project: foundry-vtt
 prefix: foundry-vtt
 stack:
+  - rust
   - terraform
+rust_artifacts:
+  lambdas:
+    - discord-wake

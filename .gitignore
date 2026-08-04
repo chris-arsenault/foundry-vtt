@@ -1,3 +1,10 @@
+# Rust
+backend/target/
+backend/target-clippy/
+backend/target-cov/
+backend/target-lambda/
+**/*.rs.bk
+
 # Terraform
 .terraform/
 *.tfstate

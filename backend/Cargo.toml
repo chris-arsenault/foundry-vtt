@@ -1,0 +1,22 @@
+[package]
+name = "discord-wake"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "discord-wake"
+path = "src/main.rs"
+
+[dependencies]
+lambda_http = "0.14"
+tokio = { version = "1", features = ["macros"] }
+serde_json = "1"
+ed25519-dalek = "2"
+hex = "0.4"
+aws-config = "1"
+aws-sdk-ec2 = "1"
+aws-sdk-ssm = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+rustls = { version = "0.23", features = ["ring"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }

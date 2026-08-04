@@ -1,6 +1,7 @@
-# Discord slash-command wake bot: a Lambda Function URL receives Discord
-# interaction webhooks (no API Gateway, no ALB involvement), verifies the
-# ed25519 signature, and starts/stops the game server.
+# Discord slash-command wake bot: the platform-standard alb-api shape — Rust
+# lambda_http Lambda behind the shared ALB at api.foundry-vtt.ahara.io. The
+# route is unauthenticated at the ALB because Discord signs every request with
+# its ed25519 application key, verified in the handler.
 
 # Set after creating the Discord application:
 #   aws ssm put-parameter --name /ahara/foundry-vtt/discord-public-key \
@@ -15,28 +16,7 @@ resource "aws_ssm_parameter" "discord_public_key" {
   }
 }
 
-data "aws_iam_policy_document" "assume_lambda" {
-  statement {
-    actions = ["sts:AssumeRole"]
-
-    principals {
-      type        = "Service"
-      identifiers = ["lambda.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "discord_wake" {
-  name               = "${local.prefix}-discord-wake"
-  assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
-}
-
-resource "aws_iam_role_policy_attachment" "discord_wake_logs" {
-  role       = aws_iam_role.discord_wake.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
-}
-
-data "aws_iam_policy_document" "discord_wake" {
+data "aws_iam_policy_document" "wake" {
   # DescribeInstances does not support resource-level scoping.
   statement {
     sid       = "DescribeInstances"
@@ -63,55 +43,32 @@ data "aws_iam_policy_document" "discord_wake" {
   }
 }
 
-resource "aws_iam_role_policy" "discord_wake" {
-  name   = "${local.prefix}-discord-wake"
-  role   = aws_iam_role.discord_wake.id
-  policy = data.aws_iam_policy_document.discord_wake.json
-}
+module "wake_api" {
+  source   = "git::https://github.com/chris-arsenault/ahara-tf-patterns.git//modules/alb-api"
+  prefix   = local.prefix
+  hostname = local.wake_api_hostname
 
-resource "aws_cloudwatch_log_group" "discord_wake" {
-  name              = "/aws/lambda/${local.prefix}-discord-wake"
-  retention_in_days = 14
-}
+  vpc = module.ctx.vpc
+  alb = module.ctx.alb
 
-data "archive_file" "discord_wake" {
-  type        = "zip"
-  source_file = "${path.module}/lambda/discord/index.mjs"
-  output_path = "${path.module}/lambda/discord/discord-wake.zip"
-}
+  iam_policy = [data.aws_iam_policy_document.wake.json]
 
-resource "aws_lambda_function" "discord_wake" {
-  function_name = "${local.prefix}-discord-wake"
-  role          = aws_iam_role.discord_wake.arn
-  handler       = "index.handler"
-  runtime       = "nodejs22.x"
-  architectures = ["arm64"]
-  timeout       = 10
-  memory_size   = 128
-
-  filename         = data.archive_file.discord_wake.output_path
-  source_code_hash = data.archive_file.discord_wake.output_base64sha256
-
-  environment {
-    variables = {
-      INSTANCE_ID      = aws_instance.server.id
-      FOUNDRY_HOSTNAME = local.hostname
-      PUBLIC_KEY_PARAM = aws_ssm_parameter.discord_public_key.name
-    }
+  environment = {
+    INSTANCE_ID      = aws_instance.server.id
+    FOUNDRY_HOSTNAME = local.hostname
+    PUBLIC_KEY_PARAM = aws_ssm_parameter.discord_public_key.name
   }
 
-  depends_on = [aws_cloudwatch_log_group.discord_wake]
-}
-
-resource "aws_lambda_function_url" "discord_wake" {
-  function_name      = aws_lambda_function.discord_wake.function_name
-  authorization_type = "NONE"
-}
-
-resource "aws_lambda_permission" "discord_wake_url" {
-  statement_id           = "AllowPublicFunctionUrl"
-  action                 = "lambda:InvokeFunctionUrl"
-  function_name          = aws_lambda_function.discord_wake.function_name
-  principal              = "*"
-  function_url_auth_type = "NONE"
+  lambdas = {
+    wake = {
+      binary = "${path.root}/../../backend/target/lambda/discord-wake/bootstrap"
+      routes = [
+        {
+          priority      = local.wake_api_listener_rule_priority
+          paths         = ["/*"]
+          authenticated = false
+        }
+      ]
+    }
+  }
 }

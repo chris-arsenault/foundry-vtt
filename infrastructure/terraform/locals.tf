@@ -6,7 +6,10 @@ locals {
 
   # Claimed in the shared listener-priority table in ahara/INTEGRATION.md.
   # athena-s3-web-shell reserves 220-229; tsonu-music starts at 240.
-  listener_rule_priority = 230
+  listener_rule_priority          = 230
+  wake_api_listener_rule_priority = 231
+
+  wake_api_hostname = "api.foundry-vtt.ahara.io"
 
   # Account-id suffix: bare foundry-vtt-* names are likely taken in the
   # global S3 namespace.

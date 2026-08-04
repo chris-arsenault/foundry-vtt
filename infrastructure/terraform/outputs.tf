@@ -10,7 +10,7 @@ output "instance_id" {
 
 output "discord_interactions_url" {
   description = "Set as the Interactions Endpoint URL in the Discord application"
-  value       = aws_lambda_function_url.discord_wake.function_url
+  value       = "https://${module.wake_api.hostname}/"
 }
 
 output "assets_bucket" {
