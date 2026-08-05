@@ -118,7 +118,7 @@ resource "aws_instance" "server" {
 
   root_block_device {
     encrypted   = true
-    volume_size = 16
+    volume_size = 60
     volume_type = "gp3"
   }
 
